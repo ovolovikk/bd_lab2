@@ -1,0 +1,85 @@
+redis> PING
+  True
+
+━━━ 1. STRING + TTL: кеш картки студента (щоб не ходити в БД щоразу) ━━━
+redis> SET lab2:card:S0000001 "{"_id": "S0000001", "last_name": "Мельник", "first_name": "Софія", "group": {"name"...
+  True
+redis> GET lab2:card:S0000001
+  {"_id": "S0000001", "last_name": "Мельник", "first_name": "Софія", "group": {"name": "G-00001"}}
+redis> TTL lab2:card:S0000001
+  60
+redis> EXISTS lab2:card:S9999999
+  0
+
+━━━ 2. INCR: лічильник переглядів профілю (атомарний, без гонок) ━━━
+redis> INCR lab2:views:S0000001
+  1
+redis> INCR lab2:views:S0000001
+  2
+redis> INCR lab2:views:S0000001
+  3
+redis> INCRBY lab2:views:S0000001 10
+  13
+
+━━━ 3. HASH + EXPIRE: сесія співробітника деканату ━━━
+redis> HSET lab2:session:7f3a username dekanat1 role deanery faculty_id 1
+  3
+redis> EXPIRE lab2:session:7f3a 1800
+  True
+redis> HGET lab2:session:7f3a role
+  deanery
+redis> HGETALL lab2:session:7f3a
+  {'username': 'dekanat1', 'role': 'deanery', 'faculty_id': '1'}
+
+━━━ 4. LIST: черга повідомлень студенту (FIFO) ━━━
+redis> RPUSH lab2:inbox:S0000001 "Оцінку з БД виставлено" "Призначено стипендію" "Зміна розкладу"
+  3
+redis> LLEN lab2:inbox:S0000001
+  3
+redis> LPOP lab2:inbox:S0000001
+  Оцінку з БД виставлено
+redis> LRANGE lab2:inbox:S0000001 0 -1
+  1) Призначено стипендію
+  2) Зміна розкладу
+
+━━━ 5. SET: учасники олімпіад і їх перетин ━━━
+redis> SADD lab2:olympiad:math S0000001 S0000002 S0000003 S0000004
+  4
+redis> SADD lab2:olympiad:prog S0000003 S0000004 S0000005
+  3
+redis> SISMEMBER lab2:olympiad:math S0000005
+  0
+redis> SINTER lab2:olympiad:math lab2:olympiad:prog
+  {'S0000004', 'S0000003'}
+redis> SUNION lab2:olympiad:math lab2:olympiad:prog
+  {'S0000005', 'S0000003', 'S0000004', 'S0000002', 'S0000001'}
+redis> SCARD lab2:olympiad:math
+  4
+
+━━━ 6. SORTED SET: рейтинг студентів за середнім балом (дані з PostgreSQL) ━━━
+(завантажено 1000 студентів через pipeline одним мережевим запитом)
+redis> ZCARD lab2:rating
+  1000
+redis> ZREVRANGE lab2:rating 0 4 WITHSCORES
+  1) ['S0000909', 87.6]
+  2) ['S0000111', 87.45]
+  3) ['S0000126', 87.0]
+  4) ['S0000809', 86.75]
+  5) ['S0000534', 86.75]
+redis> ZREVRANK lab2:rating S0000001
+  626
+redis> ZSCORE lab2:rating S0000001
+  79.15
+redis> ZINCRBY lab2:rating 5 S0000001
+  84.15
+redis> ZCOUNT lab2:rating 90 +inf
+  0
+
+━━━ 7. MULTI/EXEC: атомарно списати бал і записати в журнал ━━━
+redis> MULTI / ZINCRBY ... / RPUSH ... / EXEC
+  1) 79.15
+  2) 1
+
+━━━ Прибирання ━━━
+redis> DEL lab2:inbox:S0000001 lab2:log lab2:session:7f3a lab2:rating lab2:olympiad:prog lab2:olympiad:math lab2:v...
+  8
